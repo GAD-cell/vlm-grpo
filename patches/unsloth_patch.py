@@ -3,6 +3,7 @@ import functools
 import torch
 import inspect
 import re
+from collections import OrderedDict
 
 def patch_requires_grad_post_hook():
     """
