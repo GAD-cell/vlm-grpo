@@ -50,6 +50,30 @@ trainer = VLMGRPOTrainer(
 # Train the model
 trainer.train()
 ```
+## Dataset
+
+The trainer is implemented for a specific input type : 
+
+```python
+    messages = [
+        {
+        "prompt": [
+            {
+            "role": "user",
+            "content": [
+                {"type": "image"}, # N times if you have an image sequence of length N
+                {"type": "text",  "text": "Your super prompt"}]
+            }]
+        "image": [a,list,of,images] # len==N,
+        "answer": "assistant expected answer to the prompt"
+        }
+    ]
+
+
+```
+
+
+
 
 See the `examples` directory for more detailed examples.
 
@@ -58,3 +82,13 @@ See the `examples` directory for more detailed examples.
 - **VLMGRPOTrainer**: A trainer for Vision Language Models from unsloth using GRPO
 - **Unsloth Patches**: Patches for the unsloth library to handle errors gracefully during training
 - **Easy Integration**: Works with existing TRL and Hugging Face Transformers code
+
+## Limitations
+- **Videos input**: Doesn't support for now video input, only images or image sequence
+- **VLLm** : Still need to add vllm support to the code, will release it soon
+- **Tested** : For now i've tested my implementation only with Qwen2 VL and Qwen2.5 VL
+
+
+## Issues
+
+If you encounter any problems while using this library, please open an issue on GitHub. I am actively maintaining this repo and will address reported issues.
