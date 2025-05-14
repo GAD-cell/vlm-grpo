@@ -1,6 +1,6 @@
 # VLM-GRPO
 
-Vision Language Model training with Generative Reward-Paired Optimization
+Vision Language Model training with GRPO and Unsloth
 
 ## Overview
 
