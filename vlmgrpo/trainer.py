@@ -84,7 +84,7 @@ class VLMGRPOTrainer(GRPOTrainer):
         device = self.accelerator.device
         prompts = [x["prompt"] for x in inputs]
         image = [x["image"] for x in inputs]
-        prompts_text = [self.processing_class.apply_chat_template(example["prompt"], add_generation_prompt=False) for example in inputs]
+        prompts_text = [self.processing_class.apply_chat_template(example["prompt"], add_generation_prompt=True) for example in inputs]
         prompt_inputs = self.processing_class(
             images=image, text=prompts_text, return_tensors="pt", padding=True, add_special_tokens=False)
         prompt_inputs = Trainer._prepare_inputs(self, prompt_inputs)
@@ -144,7 +144,7 @@ class VLMGRPOTrainer(GRPOTrainer):
             if isinstance(reward_func, nn.Module):  # Module instead of PretrainedModel for compat with compiled models
                 if is_conversational(inputs[0]):
                     messages = [{"messages": p + c} for p, c in zip(prompts, completions)]
-                    texts = [self.processing_class.apply_chat_template(x["text"], add_generation_prompt=False) for x in messages]
+                    texts = [self.processing_class.apply_chat_template(x["text"], add_generation_prompt=True) for x in messages]
                 else:
                     texts = [p + c for p, c in zip(prompts, completions)]
                 reward_inputs = reward_processing_class(
