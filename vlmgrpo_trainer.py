@@ -1,45 +1,28 @@
-import torch 
+# Copyright 2025 The HuggingFace Team. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 from typing import Union,Any
+import torch 
 import torch.nn as nn
 import torch.nn.functional as F
 from accelerate.utils import gather
 from trl import GRPOConfig, GRPOTrainer,Trainer
+from trl.trainer.utils import selective_log_softmax
+from trl.data_utils import is_conversational,maybe_apply_chat_template,apply_chat_template
+from trl.models import unwrap_model_for_generation
 from unsloth import FastVisionModel
-
-def selective_log_softmax(logits, index):
-    if logits.dtype in [torch.float32, torch.float64]:
-        selected_logits = torch.gather(logits, dim=-1, index=index.unsqueeze(-1)).squeeze(-1)
-        # loop to reduce peak mem consumption
-        logsumexp_values = torch.stack([torch.logsumexp(lg, dim=-1) for lg in logits])
-        per_token_logps = selected_logits - logsumexp_values  # log_softmax(x_i) = x_i - logsumexp(x)
-    else:
-        # logsumexp approach is unstable with bfloat16, fall back to slightly less efficent approach
-        per_token_logps = []
-        for row_logits, row_labels in zip(logits, index):  # loop to reduce peak mem consumption
-            row_logps = F.log_softmax(row_logits, dim=-1)
-            row_per_token_logps = row_logps.gather(dim=-1, index=row_labels.unsqueeze(-1)).squeeze(-1)
-            per_token_logps.append(row_per_token_logps)
-        per_token_logps = torch.stack(per_token_logps)
-    return per_token_logps
-
-
-def is_conversational(example: dict[str, Any]) -> bool:
-    supported_keys = ["prompt", "chosen", "rejected", "completion", "messages"]
-    example_keys = {key for key in example.keys() if key in supported_keys}
-
-    # It must have one of the supported keys
-    if example_keys:
-        key = example_keys.pop()  # take the first supported key
-        maybe_messages = example[key]
-        # It must be a list of messages,
-        if isinstance(maybe_messages, list):
-            maybe_message = maybe_messages[0]
-            # Each message must a list of dictionaries with keys "role" and "content"
-            if isinstance(maybe_message, dict) and "role" in maybe_message and "content" in maybe_message:
-                return True
-
-    return False
-
+from unsloth_patch import patch_requires_grad_post_hook
 
 class VLMGRPOTrainer(GRPOTrainer):
       def __init__(
@@ -54,7 +37,10 @@ class VLMGRPOTrainer(GRPOTrainer):
         callbacks = None,
         peft_config = None,
     ):
-        #avoir flag error
+        #Patch unsloth 
+        patch_requires_grad_post_hook()
+        
+        #avoid flag error
         if hasattr(model, "_flag_for_generation"):
           setattr(model, "_flag_for_generation", False)
         FastVisionModel.for_training(model)
@@ -70,17 +56,22 @@ class VLMGRPOTrainer(GRPOTrainer):
           callbacks = callbacks,
           peft_config = peft_config,
           )
-
+        
         #Override GRPOTrainer tokenizer init
-        self.model=model
-        self.processing_class=processing_class
+        if processing_class != None:
+          self.processing_class=processing_class
+          
+        # if passing only 1 processor for reward (should be the same as processing_class)
+        if type(reward_processing_classes) == type(processing_class):
+          self.reward_processing_classes = [reward_processing_classes for i in range(len(reward_funcs))] 
+
+
 
       def _prepare_inputs(self, inputs: dict[str, Union[torch.Tensor, Any]]) -> dict[str, Union[torch.Tensor, Any]]:
         device = self.accelerator.device
         prompts = [x["prompt"] for x in inputs]
         image = [x["image"] for x in inputs]
-        prompts_text = [self.processing_class.apply_chat_template(example["prompt"],add_generation_prompt = True) for example in inputs]
-
+        prompts_text = [self.processing_class.apply_chat_template(example["prompt"],add_generation_prompt = False) for example in inputs]
         prompt_inputs = self.processing_class(
             images=image,text=prompts_text, return_tensors="pt", padding=True, add_special_tokens=False)
         prompt_inputs = Trainer._prepare_inputs(self,prompt_inputs)
@@ -92,8 +83,9 @@ class VLMGRPOTrainer(GRPOTrainer):
             prompt_mask = prompt_mask[:, -self.max_prompt_length :]
             #prompt_inputs["input_ids"], prompt_inputs["attention_mask"] = prompt_ids, prompt_mask
 
-        # rajouter support vLLM et unwrapper pour accelerateur
-        prompt_completion_ids = self.model.generate(**prompt_inputs, generation_config=self.generation_config)
+        # Regular generation path
+        with unwrap_model_for_generation(self.model, self.accelerator) as unwrapped_model:
+            prompt_completion_ids = unwrapped_model.generate(**prompt_inputs, generation_config=self.generation_config)
 
 
         # Compute prompt length and extract completion ids
@@ -141,7 +133,7 @@ class VLMGRPOTrainer(GRPOTrainer):
             if isinstance(reward_func, nn.Module):  # Module instead of PretrainedModel for compat with compiled models
                 if is_conversational(inputs[0]):
                     messages = [{"messages": p + c} for p, c in zip(prompts, completions)]
-                    texts = [self.processing_class.apply_chat_template(x["text"],add_generation_prompt = True) for x in messages]
+                    texts = [self.processing_class.apply_chat_template(x["text"],add_generation_prompt = False) for x in messages]
                 else:
                     texts = [p + c for p, c in zip(prompts, completions)]
                 reward_inputs = reward_processing_class(
@@ -245,3 +237,4 @@ class VLMGRPOTrainer(GRPOTrainer):
           mean_kl = ((per_token_kl * completion_mask).sum(dim=1) / completion_mask.sum(dim=1)).mean()
           self._metrics["kl"].append(self.accelerator.gather_for_metrics(mean_kl).mean().item())
           return loss
+
