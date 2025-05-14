@@ -50,6 +50,8 @@ trainer = VLMGRPOTrainer(
 # Train the model
 trainer.train()
 ```
+
+For more examples you can check the notebooks in examples 
 ## Dataset
 
 The trainer is implemented for a specific input type : 
@@ -65,7 +67,7 @@ The trainer is implemented for a specific input type :
         {"type": "text",  "text": "Your super prompt"}]
     }]
 "image": [a,list,of,images] # len==N,
-"answer": "assistant expected answer to the prompt"
+"answer": "assistant expected answer according to the prompt"
 }
 
 
@@ -80,7 +82,7 @@ See the `examples` directory for more detailed examples.
 ## Features
 
 - **VLMGRPOTrainer**: A trainer for Vision Language Models from unsloth using GRPO
-- **Unsloth Patches**: Patches for the unsloth library to handle errors gracefully during training
+- **Unsloth Patches**: Patches for the unsloth library to handle VLMs
 - **Easy Integration**: Works with existing TRL and Hugging Face Transformers code
 
 ## Limitations
