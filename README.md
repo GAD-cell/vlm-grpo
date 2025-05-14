@@ -51,7 +51,7 @@ trainer = VLMGRPOTrainer(
 trainer.train()
 ```
 
-For more examples you can check the notebooks in examples 
+See the `examples` directory for more detailed examples.
 ## Dataset
 
 The trainer is implemented for a specific input type : 
@@ -73,11 +73,6 @@ The trainer is implemented for a specific input type :
 
 
 ```
-
-
-
-
-See the `examples` directory for more detailed examples.
 
 ## Features
 
