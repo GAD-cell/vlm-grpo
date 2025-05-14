@@ -55,19 +55,19 @@ trainer.train()
 The trainer is implemented for a specific input type : 
 
 ```python
-    messages = [
-        {
-        "prompt": [
-            {
-            "role": "user",
-            "content": [
-                {"type": "image"}, # N times if you have an image sequence of length N
-                {"type": "text",  "text": "Your super prompt"}]
-            }]
-        "image": [a,list,of,images] # len==N,
-        "answer": "assistant expected answer to the prompt"
-        }
-    ]
+
+{
+"prompt": [
+    {
+    "role": "user",
+    "content": [
+        {"type": "image"}, # N times if you have an image sequence of length N
+        {"type": "text",  "text": "Your super prompt"}]
+    }]
+"image": [a,list,of,images] # len==N,
+"answer": "assistant expected answer to the prompt"
+}
+
 
 
 ```

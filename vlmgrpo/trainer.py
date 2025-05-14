@@ -23,7 +23,7 @@ from trl import GRPOConfig, GRPOTrainer
 from trl.trainer.utils import selective_log_softmax
 from trl.data_utils import is_conversational, maybe_apply_chat_template, apply_chat_template
 from trl.models import unwrap_model_for_generation
-from .patches import patch_requires_grad_post_hook, requires_grad_for_gradient_checkpointing
+from patches import patch_requires_grad_post_hook, requires_grad_for_gradient_checkpointing
 
 class VLMGRPOTrainer(GRPOTrainer):
     """
