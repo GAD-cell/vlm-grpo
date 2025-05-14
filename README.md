@@ -4,10 +4,10 @@ Vision Language Model training with Generative Reward-Paired Optimization
 
 ## Overview
 
-This repository provides tools for training Vision Language Models (VLMs) using Generative Reward-Paired Optimization (GRPO). It includes:
+This repository provides tools for training unsloth VLMS using GRPO. It includes:
 
-1. A custom trainer (`VLMGRPOTrainer`) that extends the TRL GRPO trainer to support vision inputs
-2. Patches for the unsloth library to handle errors gracefully during training
+1. A custom trainer (`VLMGRPOTrainer`) that extends the TRL GRPO trainer to support vision inputs and unsloth
+2. Patches for the unsloth library to support VLMs GRPO training
 
 ## Installation
 
@@ -27,7 +27,7 @@ from trl import GRPOConfig
 from unsloth import FastVisionModel
 
 # Load your model
-model = FastVisionModel.from_pretrained("your-model-name")
+model,tokenizer = FastVisionModel.from_pretrained("your-model-name from unsloth available VLMs")
 
 # Define your reward functions
 reward_funcs = [your_reward_function]
@@ -43,7 +43,8 @@ trainer = VLMGRPOTrainer(
         gradient_accumulation_steps=2,
     ),
     train_dataset=your_train_dataset,
-    processing_class=your_processing_class,
+    processing_class=tokenizer, # MUST put unsloth processor here !
+    reward_processing_classes = tokenizer, #Here also
 )
 
 # Train the model
@@ -54,19 +55,6 @@ See the `examples` directory for more detailed examples.
 
 ## Features
 
-- **VLMGRPOTrainer**: A trainer for Vision Language Models using GRPO
+- **VLMGRPOTrainer**: A trainer for Vision Language Models from unsloth using GRPO
 - **Unsloth Patches**: Patches for the unsloth library to handle errors gracefully during training
 - **Easy Integration**: Works with existing TRL and Hugging Face Transformers code
-
-## Requirements
-
-- Python 3.8+
-- PyTorch 2.0+
-- Transformers 4.30+
-- TRL 0.7+
-- Accelerate 0.20+
-- Unsloth 0.3+
-
-## License
-
-This project is licensed under the Apache License 2.0 - see the LICENSE file for details.
