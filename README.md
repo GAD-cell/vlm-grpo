@@ -89,3 +89,8 @@ The trainer is implemented for a specific input type :
 ## Issues
 
 If you encounter any problems while using this library, please open an issue on GitHub. I am actively maintaining this repo and will address reported issues.
+
+
+## Training test
+
+![Training test](images/training_test.png)
