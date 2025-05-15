@@ -46,6 +46,7 @@ class VLMGRPOTrainer(GRPOTrainer):
     ):
         # Patch unsloth 
         requires_grad_for_gradient_checkpointing(model)
+        print("Unsloth patched for VLMGRPO")
         # Avoid flag error
         if hasattr(model, "_flag_for_generation"):
             setattr(model, "_flag_for_generation", False)
