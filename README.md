@@ -25,6 +25,7 @@ Here's a basic example of how to use the VLMGRPOTrainer:
 from vlmgrpo import VLMGRPOTrainer
 from trl import GRPOConfig
 from unsloth import FastVisionModel
+from unsloth import is_bf16_supported
 
 # Load your model
 model,tokenizer = FastVisionModel.from_pretrained("your-model-name from unsloth available VLMs")
@@ -33,15 +34,24 @@ model,tokenizer = FastVisionModel.from_pretrained("your-model-name from unsloth 
 reward_funcs = [your_reward_function]
 
 # Create the trainer
+training_args = GRPOConfig(
+    lr_scheduler_type = "cosine",
+    optim = "adamw_8bit",
+    bf16 = is_bf16_supported(),
+    fp16 = not is_bf16_supported(),
+    per_device_train_batch_size = 2,
+    gradient_accumulation_steps = 1, # Increase to 4 for smoother training
+    num_generations = 2, # Decrease if out of memory
+    max_prompt_length = 256,
+    max_completion_length = 200,
+    # num_train_epochs = 1, # Set to 1 for a full training run
+    report_to = "none", # Can use Weights & Biases
+    output_dir = "outputs",
+)
 trainer = VLMGRPOTrainer(
     model=model,
     reward_funcs=reward_funcs,
-    args=GRPOConfig(
-        output_dir="./output",
-        num_train_epochs=3,
-        per_device_train_batch_size=4,
-        gradient_accumulation_steps=2,
-    ),
+    args=training_args),
     train_dataset=your_train_dataset,
     processing_class=tokenizer, # MUST put unsloth processor here !
     reward_processing_classes = tokenizer, #Here also
