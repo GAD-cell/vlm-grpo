@@ -22,7 +22,7 @@ pip install -e .
 Here's a basic example of how to use the VLMGRPOTrainer:
 
 ```python
-from vlmgrpo import VLMGRPOTrainer
+from vlmgrpo import VLMGRPOTrainer # YOU MUST IMPORT vlmgrpo before unsloth
 from trl import GRPOConfig
 from unsloth import FastVisionModel
 from unsloth import is_bf16_supported
@@ -55,6 +55,7 @@ trainer = VLMGRPOTrainer(
     train_dataset=your_train_dataset,
     processing_class=tokenizer, # MUST put unsloth processor here !
     reward_processing_classes = tokenizer, #Here also
+    grad_verbose = True #Enable to monitor loss and grad during training 
 )
 
 # Train the model

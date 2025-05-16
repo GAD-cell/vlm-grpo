@@ -45,8 +45,9 @@ class VLMGRPOTrainer(GRPOTrainer):
         reward_processing_classes = None,
         callbacks = None,
         peft_config = None,
+        grad_verbose = False,
     ):
-        
+        self.grad_verbose = grad_verbose
 
         super().__init__(
             model = model,
@@ -289,17 +290,17 @@ class VLMGRPOTrainer(GRPOTrainer):
     def training_step(self, model, inputs, num_items_in_batch=None) -> torch.Tensor:
         loss=super().training_step(model,inputs,num_items_in_batch)
 
-        # 5. Count gradients
         grad_params = [p for p in model.parameters() if p.grad is not None]
-        print(f"[DEBUG] Params with grad: {len(grad_params)} / {sum(1 for p in model.parameters())}")
-
-        # 6. Optionally, log gradient 
+        
         
         total_norm = 0
         for p in grad_params:
             param_norm = p.grad.data.norm(2)
             total_norm += param_norm.item() ** 2
         total_norm = total_norm ** 0.5
-        print(f"[DEBUG] Grad norm: {total_norm:.4f}")
+
+        if self.grad_verbose:
+            print(f"[DEBUG] Params with grad: {len(grad_params)} / {sum(1 for p in model.parameters())}")
+            print(f"[DEBUG] Grad norm: {total_norm:.4f}")
         
         return loss
