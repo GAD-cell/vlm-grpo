@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from collections import OrderedDict
+from accelerate.utils import gather_object
+import warnings
 from typing import Union, Any
 from unsloth import FastVisionModel
 import torch 
@@ -23,7 +25,7 @@ from trl import GRPOConfig, GRPOTrainer
 from trl.trainer.utils import selective_log_softmax
 from trl.data_utils import is_conversational, maybe_apply_chat_template, apply_chat_template
 from trl.models import unwrap_model_for_generation
-from .patches import patch_requires_grad_post_hook, requires_grad_for_gradient_checkpointing
+from .patches import patch_requires_grad_post_hook
 
 class VLMGRPOTrainer(GRPOTrainer):
     """
@@ -44,13 +46,7 @@ class VLMGRPOTrainer(GRPOTrainer):
         callbacks = None,
         peft_config = None,
     ):
-        # Patch unsloth 
-        requires_grad_for_gradient_checkpointing(model)
-        print("Unsloth patched for VLMGRPO")
-        # Avoid flag error
-        if hasattr(model, "_flag_for_generation"):
-            setattr(model, "_flag_for_generation", False)
-        FastVisionModel.for_training(model)
+        
 
         super().__init__(
             model = model,
@@ -82,6 +78,7 @@ class VLMGRPOTrainer(GRPOTrainer):
         Returns:
             The prepared inputs
         """
+        mode = "train"
         device = self.accelerator.device
         prompts = [x["prompt"] for x in inputs]
         image = [x["image"] for x in inputs]
@@ -161,6 +158,17 @@ class VLMGRPOTrainer(GRPOTrainer):
                 output_reward_func = reward_func(prompts=prompts, completions=completions, **reward_kwargs)
                 rewards_per_func[:, i] = torch.tensor(output_reward_func, dtype=torch.float32, device=device)
 
+        # If all reward functions return None for a given row, issue a detailed warning
+        if torch.isnan(rewards_per_func).all(dim=1).any():
+            nan_row_idx = torch.isnan(rewards_per_func).all(dim=1).nonzero(as_tuple=True)[0][0]
+            row_reward_kwargs = {key: value[nan_row_idx] for key, value in reward_kwargs.items()}
+            row_reward_kwargs["prompt"] = prompts[nan_row_idx]
+            row_reward_kwargs["completion"] = completions[nan_row_idx]
+            warnings.warn(
+                f"All reward functions returned None for the following kwargs: {row_reward_kwargs}. "
+                "Please ensure that at least one reward function returns a valid reward."
+            )
+
         # Gather the reward per function: this part is crucial, because the rewards are normalized per group and the
         # completions may be distributed across processes
         rewards_per_func = gather(rewards_per_func)
@@ -195,6 +203,7 @@ class VLMGRPOTrainer(GRPOTrainer):
 
         self._metrics["reward"].append(rewards.mean().item())
         self._metrics["reward_std"].append(std_grouped_rewards.mean().item())
+
 
         output = {
             "prompt_ids": prompt_ids,
@@ -275,4 +284,22 @@ class VLMGRPOTrainer(GRPOTrainer):
 
         mean_kl = ((per_token_kl * completion_mask).sum(dim=1) / completion_mask.sum(dim=1)).mean()
         self._metrics["kl"].append(self.accelerator.gather_for_metrics(mean_kl).mean().item())
+        return loss
+
+    def training_step(self, model, inputs, num_items_in_batch=None) -> torch.Tensor:
+        loss=super().training_step(model,inputs,num_items_in_batch)
+
+        # 5. Count gradients
+        grad_params = [p for p in model.parameters() if p.grad is not None]
+        print(f"[DEBUG] Params with grad: {len(grad_params)} / {sum(1 for p in model.parameters())}")
+
+        # 6. Optionally, log gradient 
+        
+        total_norm = 0
+        for p in grad_params:
+            param_norm = p.grad.data.norm(2)
+            total_norm += param_norm.item() ** 2
+        total_norm = total_norm ** 0.5
+        print(f"[DEBUG] Grad norm: {total_norm:.4f}")
+        
         return loss
