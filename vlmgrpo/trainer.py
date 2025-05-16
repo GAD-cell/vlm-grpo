@@ -300,6 +300,7 @@ class VLMGRPOTrainer(GRPOTrainer):
         total_norm = total_norm ** 0.5
 
         if self.grad_verbose:
+            print(f"[DEBUG] Loss: {loss:.4f}")
             print(f"[DEBUG] Params with grad: {len(grad_params)} / {sum(1 for p in model.parameters())}")
             print(f"[DEBUG] Grad norm: {total_norm:.4f}")
         

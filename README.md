@@ -11,10 +11,12 @@ This repository provides tools for training unsloth VLMS using GRPO. It includes
 
 ## Installation
 
-You can install the package directly from the repository:
+You can install the package and the requirements directly from the repository:
 
 ```bash
 pip install -e .
+
+pip install -r requirements.txt
 ```
 
 ## Usage
