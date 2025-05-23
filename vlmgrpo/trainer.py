@@ -26,6 +26,8 @@ from trl.trainer.utils import selective_log_softmax
 from trl.data_utils import is_conversational, maybe_apply_chat_template, apply_chat_template
 from trl.models import unwrap_model_for_generation
 from .patches import patch_requires_grad_post_hook
+from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
+from contextlib import nullcontext
 
 class VLMGRPOTrainer(GRPOTrainer):
     """
@@ -95,8 +97,15 @@ class VLMGRPOTrainer(GRPOTrainer):
             prompt_mask = prompt_mask[:, -self.max_prompt_length:]
 
         # Regular generation path
-        with unwrap_model_for_generation(self.model, self.accelerator) as unwrapped_model:
-            prompt_completion_ids = unwrapped_model.generate(**prompt_inputs, generation_config=self.generation_config)
+        with unwrap_model_for_generation(
+            self.model_wrapped, self.accelerator, gather_deepspeed3_params=self.args.ds3_gather_for_generation
+        ) as unwrapped_model:
+            with (
+                FSDP.summon_full_params(self.model_wrapped, recurse=False)
+                if self.is_fsdp_enabled
+                else nullcontext()
+            ):
+                prompt_completion_ids = unwrapped_model.generate(**prompt_inputs, generation_config=self.generation_config)
 
         # Compute prompt length and extract completion ids
         prompt_length = prompt_ids.size(1)
@@ -271,13 +280,22 @@ class VLMGRPOTrainer(GRPOTrainer):
         per_token_logps = self._get_per_token_logps(model, input_ids, attention_mask, pixel_values, image_grid_thw, logits_to_keep)
         # Compute the KL divergence between the model and the reference model
         ref_per_token_logps = inputs["ref_per_token_logps"]
-        per_token_kl = torch.exp(ref_per_token_logps - per_token_logps) - (ref_per_token_logps - per_token_logps) - 1
+        per_token_kl = torch.exp(ref_per_token_logps - per_token_logps) - (ref_per_token_logps - per_token_logps) - 1 #C'est un estimateur de KL
 
-        # x - x.detach() allows for preserving gradients from x
         advantages = inputs["advantages"]
-        per_token_loss = torch.exp(per_token_logps - per_token_logps.detach()) * advantages.unsqueeze(1)
-        per_token_loss = -(per_token_loss - self.beta * per_token_kl)
-        loss = ((per_token_loss * completion_mask).sum(dim=1) / completion_mask.sum(dim=1)).mean()
+        
+        coef_1 = torch.exp(per_token_logps - ref_per_token_logps)
+        coef_2 = torch.clamp(coef_1, 1 - 0.28, 1 + 0.28)
+
+
+        per_token_loss1 = coef_1 * advantages.unsqueeze(1)
+
+        per_token_loss2 = coef_2 * advantages.unsqueeze(1)
+        per_token_loss = -torch.min(per_token_loss1, per_token_loss2)
+        if self.beta != 0.0:
+            per_token_loss = per_token_loss + self.beta * per_token_kl
+        
+        loss = ((per_token_loss * completion_mask).sum(-1) / completion_mask.sum(-1).clamp(min=1.0)).mean()
 
         # Log the metrics
         completion_length = self.accelerator.gather_for_metrics(completion_mask.sum(1)).float().mean().item()
