@@ -28,6 +28,57 @@ from trl.models import unwrap_model_for_generation
 from .patches import patch_requires_grad_post_hook
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from contextlib import nullcontext
+from transformers import GenerationConfig
+
+
+def shuffle_tensor_dict(tensor_dict):
+    """
+    Shuffles a dictionary of tensors along the first dimension in unison.
+
+    Example:
+        >>> x = torch.arange(6).reshape(3, 2)
+        >>> y = torch.arange(3).reshape(3, 1)
+        >>> tensor_dict = {"x": x, "y": y}
+        >>> shuffle_tensor_dict(tensor_dict)
+        {'x': tensor([[2, 3],
+                      [0, 1],
+                      [4, 5]]),
+         'y': tensor([[1],
+                      [0],
+                      [2]])}
+    """
+    first_tensor = next(tensor for tensor in tensor_dict.values() if tensor is not None)
+    batch_size = first_tensor.shape[0]
+    permutation = torch.randperm(batch_size)
+    return {key: tensor[permutation] if tensor is not None else None for key, tensor in tensor_dict.items()}
+
+def split_tensor_dict(
+    tensor_dict, num_chunks
+) :
+    """
+    Splits a dictionary of tensors along the first dimension into `num_chunks` equal parts.
+
+    Example:
+        >>> x = torch.arange(12).reshape(6, 2)
+        >>> y = torch.arange(6).reshape(6, 1)
+        >>> tensor_dict = {"x": x, "y": y}
+        >>> split_tensor_dict(tensor_dict, 3)
+        [
+            {"x": tensor([[0, 1], [2, 3]]), "y": tensor([[0], [1]])},
+            {"x": tensor([[4, 5], [6, 7]]), "y": tensor([[2], [3]])},
+            {"x": tensor([[ 8,  9], [10, 11]]), "y": tensor([[4], [5]])}
+        ]
+    """
+    first_tensor = next(tensor for tensor in tensor_dict.values() if tensor is not None)
+    chunk_size = first_tensor.shape[0] // num_chunks
+    return [
+        {
+            key: tensor[i * chunk_size : (i + 1) * chunk_size] if tensor is not None else None
+            for key, tensor in tensor_dict.items()
+        }
+        for i in range(num_chunks)
+    ]
+
 
 class VLMGRPOTrainer(GRPOTrainer):
     """
@@ -50,7 +101,7 @@ class VLMGRPOTrainer(GRPOTrainer):
         grad_verbose = False,
     ):
         self.grad_verbose = grad_verbose
-
+        
         super().__init__(
             model = model,
             reward_funcs = reward_funcs,
@@ -62,7 +113,14 @@ class VLMGRPOTrainer(GRPOTrainer):
             callbacks = callbacks,
             peft_config = peft_config,
         )
-        
+        self.num_iterations=1
+        self.steps_per_generation = 4
+        self.per_device_train_batch_size = 4
+        self.gradient_accumulation_steps = 4
+        self._step=0
+        self.generation_config.bos_token_id = processing_class.bos_token_id
+        self.generation_config.eos_token_id = processing_class.eos_token_id
+        self.generation_config.early_stopping = True
         # Override GRPOTrainer tokenizer init
         if processing_class is not None:
             self.processing_class = processing_class
@@ -71,16 +129,43 @@ class VLMGRPOTrainer(GRPOTrainer):
         if type(reward_processing_classes) == type(processing_class):
             self.reward_processing_classes = [reward_processing_classes for i in range(len(reward_funcs))]
 
-    def _prepare_inputs(self, inputs: dict[str, Union[torch.Tensor, Any]]) -> dict[str, Union[torch.Tensor, Any]]:
-        """
-        Prepare inputs for the model.
+    def _prepare_inputs(
+        self, generation_batch: dict[str, Union[torch.Tensor, Any]]
+    ) -> dict[str, Union[torch.Tensor, Any]]:
+        # Prepares inputs for model training/evaluation by managing completion generation and batch handling.
+        # During training:
+        #   - Receives the local generation batch (Per-GPU batch size × steps per generation)
+        #     from the modified training dataloader instead of the standard local batch
+        #   - Generates completions once for the entire generation batch and splits it into batches of size
+        #     `per_device_train_batch_size`
+        #   - Buffers these completions and returns the appropriate slice for the current accumulation step
+        #   - Optimizes by regenerating completions only periodically (every steps_per_generation * num_iterations)
+        # During evaluation:
+        #   - The input is treated as a standard local batch (no accumulation, no multiple iterations)
+        #   - Completions are generated for each batch without buffering or reuse
+        # Returns a single local batch in both cases.
         
-        Args:
-            inputs: The inputs to prepare
-            
-        Returns:
-            The prepared inputs
-        """
+        mode = "train" if self.model.training else "eval"
+        if mode == "train":
+            generate_every = self.steps_per_generation * self.num_iterations
+            if self._step % generate_every == 0 or self._buffered_inputs is None:
+                # self._buffered_inputs=None can occur when resuming from a checkpoint
+                generation_batch = self._generate_and_score_completions(generation_batch)
+                generation_batch["pixel_values"]=generation_batch["pixel_values"].view(generation_batch["prompt_ids"].size(0), -1, generation_batch["pixel_values"].size(1)) #redimensionner pixel_values pour split (batch_size * n_patches, dim embedding)->(batch_size,n_patches,dim embeddding)
+                generation_batch = shuffle_tensor_dict(generation_batch)
+                self._buffered_inputs = split_tensor_dict(generation_batch, self.steps_per_generation)
+            inputs = self._buffered_inputs[self._step % self.steps_per_generation]
+            self._step += 1
+        else:
+            # In evaluation, there is neither batch grouping for generation, nor multiple iterations, hence
+            # local generation batch == local eval batch
+            inputs = self._generate_and_score_completions(generation_batch)
+        
+        return inputs
+
+
+    def _generate_and_score_completions(self, inputs: dict[str, Union[torch.Tensor, Any]]) -> dict[str, Union[torch.Tensor, Any]]:
+
         mode = "train"
         device = self.accelerator.device
         prompts = [x["prompt"] for x in inputs]
@@ -91,10 +176,13 @@ class VLMGRPOTrainer(GRPOTrainer):
         prompt_inputs = Trainer._prepare_inputs(self, prompt_inputs)
         prompt_ids, prompt_mask = prompt_inputs["input_ids"], prompt_inputs["attention_mask"]
         pixel_values, image_grid_thw = prompt_inputs["pixel_values"], prompt_inputs["image_grid_thw"]
-
+        is_eos_prompt = prompt_ids == self.processing_class.eos_token_id
+        
         if self.max_prompt_length is not None:
-            prompt_ids = prompt_ids[:, -self.max_prompt_length:]
-            prompt_mask = prompt_mask[:, -self.max_prompt_length:]
+          if prompt_ids.size(1)>self.max_prompt_length:
+              print("prompt length > max prompt length : truncating")
+              prompt_ids = prompt_ids[:, -self.max_prompt_length:]
+              prompt_mask = prompt_mask[:, -self.max_prompt_length:]
 
         # Regular generation path
         with unwrap_model_for_generation(
@@ -111,7 +199,6 @@ class VLMGRPOTrainer(GRPOTrainer):
         prompt_length = prompt_ids.size(1)
         prompt_ids = prompt_completion_ids[:, :prompt_length]
         completion_ids = prompt_completion_ids[:, prompt_length:]
-
         # Mask everything after the first EOS token
         is_eos = completion_ids == self.processing_class.eos_token_id
         eos_idx = torch.full((is_eos.size(0),), is_eos.size(1), dtype=torch.long, device=device)
@@ -123,17 +210,17 @@ class VLMGRPOTrainer(GRPOTrainer):
         attention_mask = torch.cat([prompt_mask, completion_mask], dim=1)  # (B*G, P+C)
 
         logits_to_keep = completion_ids.size(1)  # we only need to compute the logits for the completion tokens
-
-        with torch.inference_mode():
-            if self.ref_model is not None:
-                ref_per_token_logps = self._get_per_token_logps(
-                    self.ref_model, prompt_completion_ids, attention_mask, pixel_values, image_grid_thw, logits_to_keep
+        batch_size = self.per_device_train_batch_size 
+        with torch.no_grad():
+            # When using num_iterations == 1 and steps_per_generation <= gradient_accumulation_steps
+            # old_per_token_logps == per_token_logps, so we can skip it's computation here, and use
+            # per_token_logps.detach() instead.
+            if self.num_iterations > 1 or self.steps_per_generation > self.gradient_accumulation_steps:
+                old_per_token_logps = self._get_per_token_logps(
+                    self.model, prompt_completion_ids, attention_mask,pixel_values, image_grid_thw,logits_to_keep
                 )
             else:
-                with self.accelerator.unwrap_model(self.model).disable_adapter():
-                    ref_per_token_logps = self._get_per_token_logps(
-                        self.model, prompt_completion_ids, attention_mask, pixel_values, image_grid_thw, logits_to_keep
-                    )
+                old_per_token_logps = None
 
         # Decode the generated completions
         completions_text = self.processing_class.batch_decode(completion_ids, skip_special_tokens=True)
@@ -158,7 +245,7 @@ class VLMGRPOTrainer(GRPOTrainer):
                 reward_inputs = reward_processing_class(
                     texts, return_tensors="pt", padding=True, padding_side="right", add_special_tokens=False
                 )
-                reward_inputs = super()._prepare_inputs(reward_inputs)
+                reward_inputs = Trainer._prepare_inputs(reward_inputs)
                 with torch.inference_mode():
                     rewards_per_func[:, i] = reward_func(**reward_inputs).logits[:, 0]  # Shape (B*G,)
             else:
@@ -214,7 +301,6 @@ class VLMGRPOTrainer(GRPOTrainer):
         self._metrics["reward"].append(rewards.mean().item())
         self._metrics["reward_std"].append(std_grouped_rewards.mean().item())
 
-
         output = {
             "prompt_ids": prompt_ids,
             "prompt_mask": prompt_mask,
@@ -222,7 +308,7 @@ class VLMGRPOTrainer(GRPOTrainer):
             "image_grid_thw": image_grid_thw,
             "completion_ids": completion_ids,
             "completion_mask": completion_mask,
-            "ref_per_token_logps": ref_per_token_logps,
+            "old_per_token_logps": old_per_token_logps,
             "advantages": advantages,
         }
         return output
@@ -277,24 +363,38 @@ class VLMGRPOTrainer(GRPOTrainer):
         attention_mask = torch.cat([prompt_mask, completion_mask], dim=1)
         logits_to_keep = completion_ids.size(1)  # we only need to compute the logits for the completion tokens
 
-        per_token_logps = self._get_per_token_logps(model, input_ids, attention_mask, pixel_values, image_grid_thw, logits_to_keep)
-        # Compute the KL divergence between the model and the reference model
-        ref_per_token_logps = inputs["ref_per_token_logps"]
-        per_token_kl = torch.exp(ref_per_token_logps - per_token_logps) - (ref_per_token_logps - per_token_logps) - 1 #C'est un estimateur de KL
 
+        if self.beta != 0.0:
+            with torch.no_grad():
+                if self.ref_model is not None:
+                    ref_per_token_logps = self._get_per_token_logps(
+                        self.ref_model, input_ids, attention_mask, pixel_values, image_grid_thw,logits_to_keep
+                    )
+                else:
+                    with self.accelerator.unwrap_model(self.model).disable_adapter():
+                        ref_per_token_logps = self._get_per_token_logps(
+                            self.model, input_ids, attention_mask,pixel_values, image_grid_thw,logits_to_keep
+                        )
+
+        per_token_logps = self._get_per_token_logps(self.model, input_ids, attention_mask, pixel_values, image_grid_thw, logits_to_keep)
+        # Compute the KL divergence between the model and the reference model
+        per_token_kl = torch.exp(ref_per_token_logps - per_token_logps) - ( ref_per_token_logps - per_token_logps) - 1
+
+        # x - x.detach() allows for preserving gradients from x
         advantages = inputs["advantages"]
-        
-        coef_1 = torch.exp(per_token_logps - ref_per_token_logps)
-        coef_2 = torch.clamp(coef_1, 1 - 0.28, 1 + 0.28)
+
+        old_per_token_logps = (
+            per_token_logps.detach() if inputs["old_per_token_logps"] is None else inputs["old_per_token_logps"]
+        )
+        coef_1 = torch.exp(per_token_logps - old_per_token_logps)
+        coef_2 = torch.clamp(coef_1, 1 - 0.28, 1 + 0.28) #0.28 value recommended by the DAPO paper
 
 
         per_token_loss1 = coef_1 * advantages.unsqueeze(1)
-
         per_token_loss2 = coef_2 * advantages.unsqueeze(1)
         per_token_loss = -torch.min(per_token_loss1, per_token_loss2)
         if self.beta != 0.0:
             per_token_loss = per_token_loss + self.beta * per_token_kl
-        
         loss = ((per_token_loss * completion_mask).sum(-1) / completion_mask.sum(-1).clamp(min=1.0)).mean()
 
         # Log the metrics
@@ -318,7 +418,7 @@ class VLMGRPOTrainer(GRPOTrainer):
         total_norm = total_norm ** 0.5
 
         if self.grad_verbose:
-            print(f"[DEBUG] Loss: {loss:.4f}")
+            print(f"[DEBUG] Loss: {loss}")
             print(f"[DEBUG] Params with grad: {len(grad_params)} / {sum(1 for p in model.parameters())}")
             print(f"[DEBUG] Grad norm: {total_norm:.4f}")
         
