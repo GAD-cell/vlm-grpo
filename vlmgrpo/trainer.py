@@ -151,7 +151,54 @@ class VLMGRPOTrainer(GRPOTrainer):
             if self._step % generate_every == 0 or self._buffered_inputs is None:
                 # self._buffered_inputs=None can occur when resuming from a checkpoint
                 generation_batch = self._generate_and_score_completions(generation_batch)
+                
+                # Сохраняем исходные размерности для корректировки image_grid_thw
+                original_pixel_values_batch_size = generation_batch["pixel_values"].size(0)
+                target_batch_size = generation_batch["prompt_ids"].size(0)
+                
                 generation_batch["pixel_values"]=generation_batch["pixel_values"].view(generation_batch["prompt_ids"].size(0), -1, generation_batch["pixel_values"].size(1)) #redimensionner pixel_values pour split (batch_size * n_patches, dim embedding)->(batch_size,n_patches,dim embeddding)
+                
+                # Синхронная корректировка image_grid_thw для соответствия новой размерности pixel_values
+                if generation_batch["image_grid_thw"].size(0) != target_batch_size:
+                    if self.grad_verbose:
+                        print(f"[DEBUG] Корректировка image_grid_thw: исходный размер {generation_batch['image_grid_thw'].size(0)}, целевой размер {target_batch_size}")
+                    
+                    # Если размерности не совпадают, корректируем image_grid_thw
+                    if generation_batch["image_grid_thw"].size(0) == original_pixel_values_batch_size:
+                        # Случай: image_grid_thw имеет ту же размерность что и исходный pixel_values
+                        # Нужно сгруппировать или дублировать согласно новой структуре
+                        patches_per_item = original_pixel_values_batch_size // target_batch_size
+                        if original_pixel_values_batch_size % target_batch_size == 0 and patches_per_item > 1:
+                            # Группируем image_grid_thw - берем каждый patches_per_item-ый элемент
+                            if self.grad_verbose:
+                                print(f"[DEBUG] Группировка image_grid_thw: patches_per_item={patches_per_item}")
+                            generation_batch["image_grid_thw"] = generation_batch["image_grid_thw"][::patches_per_item]
+                        else:
+                            # Дублируем image_grid_thw до нужного размера
+                            repeat_factor = target_batch_size // generation_batch["image_grid_thw"].size(0)
+                            if repeat_factor > 1:
+                                if self.grad_verbose:
+                                    print(f"[DEBUG] Дублирование image_grid_thw: repeat_factor={repeat_factor}")
+                                generation_batch["image_grid_thw"] = generation_batch["image_grid_thw"].repeat(repeat_factor, 1)
+                            # Если все еще не совпадает, обрезаем до нужного размера
+                            if generation_batch["image_grid_thw"].size(0) > target_batch_size:
+                                if self.grad_verbose:
+                                    print(f"[DEBUG] Обрезка image_grid_thw до размера {target_batch_size}")
+                                generation_batch["image_grid_thw"] = generation_batch["image_grid_thw"][:target_batch_size]
+                            elif generation_batch["image_grid_thw"].size(0) < target_batch_size:
+                                # Дополняем повторением последнего элемента
+                                remaining = target_batch_size - generation_batch["image_grid_thw"].size(0)
+                                if self.grad_verbose:
+                                    print(f"[DEBUG] Дополнение image_grid_thw на {remaining} элементов")
+                                last_element = generation_batch["image_grid_thw"][-1:].repeat(remaining, 1)
+                                generation_batch["image_grid_thw"] = torch.cat([generation_batch["image_grid_thw"], last_element], dim=0)
+                
+                    if self.grad_verbose:
+                        print(f"[DEBUG] Результат корректировки: image_grid_thw размер {generation_batch['image_grid_thw'].size(0)}")
+                else:
+                    if self.grad_verbose:
+                        print(f"[DEBUG] Корректировка image_grid_thw не требуется: размеры совпадают ({target_batch_size})")
+                
                 generation_batch = shuffle_tensor_dict(generation_batch)
                 self._buffered_inputs = split_tensor_dict(generation_batch, self.steps_per_generation)
             inputs = self._buffered_inputs[self._step % self.steps_per_generation]
@@ -328,6 +375,28 @@ class VLMGRPOTrainer(GRPOTrainer):
         Returns:
             The per-token log probabilities
         """
+        # Защитная проверка размерностей
+        if pixel_values is not None and image_grid_thw is not None:
+            pixel_batch_size = pixel_values.size(0)
+            image_grid_batch_size = image_grid_thw.size(0)
+            
+            if pixel_batch_size != image_grid_batch_size:
+                warnings.warn(
+                    f"Несоответствие размерностей: pixel_values.size(0)={pixel_batch_size}, "
+                    f"image_grid_thw.size(0)={image_grid_batch_size}. "
+                    f"Корректируем image_grid_thw для соответствия pixel_values."
+                )
+                
+                # Корректируем image_grid_thw для соответствия pixel_values
+                if image_grid_batch_size > pixel_batch_size:
+                    # Обрезаем до нужного размера
+                    image_grid_thw = image_grid_thw[:pixel_batch_size]
+                elif image_grid_batch_size < pixel_batch_size:
+                    # Дополняем повторением последнего элемента
+                    remaining = pixel_batch_size - image_grid_batch_size
+                    last_element = image_grid_thw[-1:].repeat(remaining, 1)
+                    image_grid_thw = torch.cat([image_grid_thw, last_element], dim=0)
+        
         # We add 1 to `logits_to_keep` because the last logits of the sequence is later excluded
         logits = model(input_ids=input_ids, attention_mask=attention_mask, pixel_values=pixel_values, 
                       image_grid_thw=image_grid_thw, logits_to_keep=logits_to_keep + 1).logits
