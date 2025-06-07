@@ -57,6 +57,7 @@ def split_tensor_dict(
 ) :
     """
     Splits a dictionary of tensors along the first dimension into `num_chunks` equal parts.
+    Special handling for pixel_values when image_grid_thw is present.
 
     Example:
         >>> x = torch.arange(12).reshape(6, 2)
@@ -78,8 +79,71 @@ def split_tensor_dict(
     if actual_num_chunks == 0:
         return []
     
-    chunk_size = batch_size // actual_num_chunks
+    # Специальная обработка pixel_values с image_grid_thw
+    if "pixel_values" in tensor_dict and "image_grid_thw" in tensor_dict:
+        pixel_values = tensor_dict["pixel_values"]
+        image_grid_thw = tensor_dict["image_grid_thw"]
+        
+        # Вычисляем количество патчей на изображение
+        patches_per_image = []
+        total_patches = 0
+        for i in range(image_grid_thw.shape[0]):
+            t, h, w = image_grid_thw[i].cpu().tolist()
+            patches = t * h * w
+            patches_per_image.append(patches)
+            total_patches += patches
+        
+        # Проверяем соответствие общего количества патчей
+        if total_patches != pixel_values.shape[0]:
+            print(f"[WARNING] Несоответствие патчей: ожидалось {total_patches}, получено {pixel_values.shape[0]}")
+            # Fallback к обычному разделению
+            chunk_size = batch_size // actual_num_chunks
+            chunks = []
+            for i in range(actual_num_chunks):
+                start_idx = i * chunk_size
+                end_idx = (i + 1) * chunk_size if i < actual_num_chunks - 1 else batch_size
+                
+                chunk = {
+                    key: tensor[start_idx:end_idx] if tensor is not None else None
+                    for key, tensor in tensor_dict.items()
+                }
+                chunks.append(chunk)
+            return chunks
+        
+        # Создаем чанки с правильным разделением pixel_values
+        chunks = []
+        images_per_chunk = batch_size // actual_num_chunks
+        
+        current_patch_offset = 0
+        for i in range(actual_num_chunks):
+            start_image_idx = i * images_per_chunk
+            # Последний чанк получает все оставшиеся изображения
+            if i == actual_num_chunks - 1:
+                end_image_idx = batch_size
+            else:
+                end_image_idx = (i + 1) * images_per_chunk
+            
+            # Вычисляем диапазон патчей для этого чанка
+            start_patch_idx = current_patch_offset
+            patch_count = sum(patches_per_image[start_image_idx:end_image_idx])
+            end_patch_idx = start_patch_idx + patch_count
+            
+            chunk = {}
+            for key, tensor in tensor_dict.items():
+                if tensor is None:
+                    chunk[key] = None
+                elif key == "pixel_values":
+                    chunk[key] = tensor[start_patch_idx:end_patch_idx]
+                else:
+                    chunk[key] = tensor[start_image_idx:end_image_idx]
+            
+            chunks.append(chunk)
+            current_patch_offset = end_patch_idx
+        
+        return chunks
     
+    # Обычное разделение для остальных случаев
+    chunk_size = batch_size // actual_num_chunks
     chunks = []
     for i in range(actual_num_chunks):
         start_idx = i * chunk_size
