@@ -153,56 +153,64 @@ class VLMGRPOTrainer(GRPOTrainer):
                 generation_batch = self._generate_and_score_completions(generation_batch)
                 
                 # Сохраняем исходные размерности для корректировки image_grid_thw
-                original_pixel_values_batch_size = generation_batch["pixel_values"].size(0)
-                target_batch_size = generation_batch["prompt_ids"].size(0)
+                # original_pixel_values_batch_size = generation_batch["pixel_values"].size(0)
+                # target_batch_size = generation_batch["prompt_ids"].size(0)
                 
-                generation_batch["pixel_values"]=generation_batch["pixel_values"].view(generation_batch["prompt_ids"].size(0), -1, generation_batch["pixel_values"].size(1)) #redimensionner pixel_values pour split (batch_size * n_patches, dim embedding)->(batch_size,n_patches,dim embeddding)
+                # Временно закомментировано для проверки - возможно, этот reshape вызывает проблему
+                # generation_batch["pixel_values"]=generation_batch["pixel_values"].view(generation_batch["prompt_ids"].size(0), -1, generation_batch["pixel_values"].size(1)) #redimensionner pixel_values pour split (batch_size * n_patches, dim embedding)->(batch_size,n_patches,dim embeddding)
                 
                 # Синхронная корректировка image_grid_thw для соответствия новой размерности pixel_values
-                if generation_batch["image_grid_thw"].size(0) != target_batch_size:
-                    if self.grad_verbose:
-                        print(f"[DEBUG] Корректировка image_grid_thw: исходный размер {generation_batch['image_grid_thw'].size(0)}, целевой размер {target_batch_size}")
-                        print(f"[DEBUG] image_grid_thw ДО корректировки: {generation_batch['image_grid_thw']}")
-                    
-                    # Если размерности не совпадают, корректируем image_grid_thw
-                    if generation_batch["image_grid_thw"].size(0) == original_pixel_values_batch_size:
-                        # Случай: image_grid_thw имеет ту же размерность что и исходный pixel_values
-                        # Нужно сгруппировать или дублировать согласно новой структуре
-                        patches_per_item = original_pixel_values_batch_size // target_batch_size
-                        if original_pixel_values_batch_size % target_batch_size == 0 and patches_per_item > 1:
-                            # Группируем image_grid_thw - берем каждый patches_per_item-ый элемент
-                            if self.grad_verbose:
-                                print(f"[DEBUG] Группировка image_grid_thw: patches_per_item={patches_per_item}")
-                            generation_batch["image_grid_thw"] = generation_batch["image_grid_thw"][::patches_per_item]
-                        else:
-                            # Дублируем image_grid_thw до нужного размера
-                            repeat_factor = target_batch_size // generation_batch["image_grid_thw"].size(0)
-                            if repeat_factor > 1:
-                                if self.grad_verbose:
-                                    print(f"[DEBUG] Дублирование image_grid_thw: repeat_factor={repeat_factor}")
-                                generation_batch["image_grid_thw"] = generation_batch["image_grid_thw"].repeat(repeat_factor, 1)
-                            # Если все еще не совпадает, обрезаем до нужного размера
-                            if generation_batch["image_grid_thw"].size(0) > target_batch_size:
-                                if self.grad_verbose:
-                                    print(f"[DEBUG] Обрезка image_grid_thw до размера {target_batch_size}")
-                                generation_batch["image_grid_thw"] = generation_batch["image_grid_thw"][:target_batch_size]
-                            elif generation_batch["image_grid_thw"].size(0) < target_batch_size:
-                                # Дополняем повторением последнего элемента
-                                remaining = target_batch_size - generation_batch["image_grid_thw"].size(0)
-                                if self.grad_verbose:
-                                    print(f"[DEBUG] Дополнение image_grid_thw на {remaining} элементов")
-                                last_element = generation_batch["image_grid_thw"][-1:].repeat(remaining, 1)
-                                generation_batch["image_grid_thw"] = torch.cat([generation_batch["image_grid_thw"], last_element], dim=0)
+                # if generation_batch["image_grid_thw"].size(0) != target_batch_size:
+                #     if self.grad_verbose:
+                #         print(f"[DEBUG] Корректировка image_grid_thw: исходный размер {generation_batch['image_grid_thw'].size(0)}, целевой размер {target_batch_size}")
+                #         print(f"[DEBUG] image_grid_thw ДО корректировки: {generation_batch['image_grid_thw']}")
+                #     
+                #     # Если размерности не совпадают, корректируем image_grid_thw
+                #     if generation_batch["image_grid_thw"].size(0) == original_pixel_values_batch_size:
+                #         # Случай: image_grid_thw имеет ту же размерность что и исходный pixel_values
+                #         # Нужно сгруппировать или дублировать согласно новой структуре
+                #         patches_per_item = original_pixel_values_batch_size // target_batch_size
+                #         if original_pixel_values_batch_size % target_batch_size == 0 and patches_per_item > 1:
+                #             # Группируем image_grid_thw - берем каждый patches_per_item-ый элемент
+                #             if self.grad_verbose:
+                #                 print(f"[DEBUG] Группировка image_grid_thw: patches_per_item={patches_per_item}")
+                #             generation_batch["image_grid_thw"] = generation_batch["image_grid_thw"][::patches_per_item]
+                #         else:
+                #             # Дублируем image_grid_thw до нужного размера
+                #             repeat_factor = target_batch_size // generation_batch["image_grid_thw"].size(0)
+                #             if repeat_factor > 1:
+                #                 if self.grad_verbose:
+                #                     print(f"[DEBUG] Дублирование image_grid_thw: repeat_factor={repeat_factor}")
+                #                 generation_batch["image_grid_thw"] = generation_batch["image_grid_thw"].repeat(repeat_factor, 1)
+                #             # Если все еще не совпадает, обрезаем до нужного размера
+                #             if generation_batch["image_grid_thw"].size(0) > target_batch_size:
+                #                 if self.grad_verbose:
+                #                     print(f"[DEBUG] Обрезка image_grid_thw до размера {target_batch_size}")
+                #                 generation_batch["image_grid_thw"] = generation_batch["image_grid_thw"][:target_batch_size]
+                #             elif generation_batch["image_grid_thw"].size(0) < target_batch_size:
+                #                 # Дополняем повторением последнего элемента
+                #                 remaining = target_batch_size - generation_batch["image_grid_thw"].size(0)
+                #                 if self.grad_verbose:
+                #                     print(f"[DEBUG] Дополнение image_grid_thw на {remaining} элементов")
+                #                 last_element = generation_batch["image_grid_thw"][-1:].repeat(remaining, 1)
+                #                 generation_batch["image_grid_thw"] = torch.cat([generation_batch["image_grid_thw"], last_element], dim=0)
+                # 
+                #     if self.grad_verbose:
+                #         print(f"[DEBUG] Результат корректировки: image_grid_thw размер {generation_batch['image_grid_thw'].size(0)}")
+                #         print(f"[DEBUG] image_grid_thw ПОСЛЕ корректировки: {generation_batch['image_grid_thw']}")
+                # else:
+                #     if self.grad_verbose:
+                #         print(f"[DEBUG] Корректировка image_grid_thw не требуется: размеры совпадают ({target_batch_size})")
+                #         print(f"[DEBUG] image_grid_thw содержимое: {generation_batch['image_grid_thw']}")
+                #         print(f"[DEBUG] pixel_values размер: {generation_batch['pixel_values'].shape}")
+                #         print(f"[DEBUG] prompt_ids размер: {generation_batch['prompt_ids'].shape}")
                 
-                    if self.grad_verbose:
-                        print(f"[DEBUG] Результат корректировки: image_grid_thw размер {generation_batch['image_grid_thw'].size(0)}")
-                        print(f"[DEBUG] image_grid_thw ПОСЛЕ корректировки: {generation_batch['image_grid_thw']}")
-                else:
-                    if self.grad_verbose:
-                        print(f"[DEBUG] Корректировка image_grid_thw не требуется: размеры совпадают ({target_batch_size})")
-                        print(f"[DEBUG] image_grid_thw содержимое: {generation_batch['image_grid_thw']}")
-                        print(f"[DEBUG] pixel_values размер: {generation_batch['pixel_values'].shape}")
-                        print(f"[DEBUG] prompt_ids размер: {generation_batch['prompt_ids'].shape}")
+                if self.grad_verbose:
+                    print(f"[DEBUG] Оставляем pixel_values и image_grid_thw без изменений")
+                    print(f"[DEBUG] pixel_values размер: {generation_batch['pixel_values'].shape}")
+                    print(f"[DEBUG] image_grid_thw размер: {generation_batch['image_grid_thw'].shape}")
+                    print(f"[DEBUG] image_grid_thw содержимое: {generation_batch['image_grid_thw']}")
+                    print(f"[DEBUG] prompt_ids размер: {generation_batch['prompt_ids'].shape}")
                 
                 generation_batch = shuffle_tensor_dict(generation_batch)
                 self._buffered_inputs = split_tensor_dict(generation_batch, self.steps_per_generation)
