@@ -1,2 +1,7 @@
 .venv
 /archive/
+vlmgrpo/patches/__pycache__/unsloth_patch.cpython-310.pyc
+vlmgrpo/patches/__pycache__/__init__.cpython-310.pyc
+vlmgrpo/__pycache__/trainer.cpython-310.pyc
+vlmgrpo/__pycache__/__init__.cpython-310.pyc
+test_fix.py
