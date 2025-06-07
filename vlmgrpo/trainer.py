@@ -162,6 +162,7 @@ class VLMGRPOTrainer(GRPOTrainer):
                 if generation_batch["image_grid_thw"].size(0) != target_batch_size:
                     if self.grad_verbose:
                         print(f"[DEBUG] Корректировка image_grid_thw: исходный размер {generation_batch['image_grid_thw'].size(0)}, целевой размер {target_batch_size}")
+                        print(f"[DEBUG] image_grid_thw ДО корректировки: {generation_batch['image_grid_thw']}")
                     
                     # Если размерности не совпадают, корректируем image_grid_thw
                     if generation_batch["image_grid_thw"].size(0) == original_pixel_values_batch_size:
@@ -195,9 +196,13 @@ class VLMGRPOTrainer(GRPOTrainer):
                 
                     if self.grad_verbose:
                         print(f"[DEBUG] Результат корректировки: image_grid_thw размер {generation_batch['image_grid_thw'].size(0)}")
+                        print(f"[DEBUG] image_grid_thw ПОСЛЕ корректировки: {generation_batch['image_grid_thw']}")
                 else:
                     if self.grad_verbose:
                         print(f"[DEBUG] Корректировка image_grid_thw не требуется: размеры совпадают ({target_batch_size})")
+                        print(f"[DEBUG] image_grid_thw содержимое: {generation_batch['image_grid_thw']}")
+                        print(f"[DEBUG] pixel_values размер: {generation_batch['pixel_values'].shape}")
+                        print(f"[DEBUG] prompt_ids размер: {generation_batch['prompt_ids'].shape}")
                 
                 generation_batch = shuffle_tensor_dict(generation_batch)
                 self._buffered_inputs = split_tensor_dict(generation_batch, self.steps_per_generation)
