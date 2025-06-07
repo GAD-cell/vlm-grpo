@@ -70,14 +70,29 @@ def split_tensor_dict(
         ]
     """
     first_tensor = next(tensor for tensor in tensor_dict.values() if tensor is not None)
-    chunk_size = first_tensor.shape[0] // num_chunks
-    return [
-        {
-            key: tensor[i * chunk_size : (i + 1) * chunk_size] if tensor is not None else None
+    batch_size = first_tensor.shape[0]
+    
+    # Если batch_size меньше num_chunks, создаем только batch_size чанков
+    actual_num_chunks = min(batch_size, num_chunks)
+    
+    if actual_num_chunks == 0:
+        return []
+    
+    chunk_size = batch_size // actual_num_chunks
+    
+    chunks = []
+    for i in range(actual_num_chunks):
+        start_idx = i * chunk_size
+        # Последний чанк получает все оставшиеся элементы
+        end_idx = (i + 1) * chunk_size if i < actual_num_chunks - 1 else batch_size
+        
+        chunk = {
+            key: tensor[start_idx:end_idx] if tensor is not None else None
             for key, tensor in tensor_dict.items()
         }
-        for i in range(num_chunks)
-    ]
+        chunks.append(chunk)
+    
+    return chunks
 
 
 class VLMGRPOTrainer(GRPOTrainer):
@@ -214,7 +229,10 @@ class VLMGRPOTrainer(GRPOTrainer):
                 
                 generation_batch = shuffle_tensor_dict(generation_batch)
                 self._buffered_inputs = split_tensor_dict(generation_batch, self.steps_per_generation)
-            inputs = self._buffered_inputs[self._step % self.steps_per_generation]
+            
+            # Если чанков меньше чем steps_per_generation, используем модуло для циклического доступа
+            chunk_index = self._step % min(len(self._buffered_inputs), self.steps_per_generation)
+            inputs = self._buffered_inputs[chunk_index]
             self._step += 1
         else:
             # In evaluation, there is neither batch grouping for generation, nor multiple iterations, hence
