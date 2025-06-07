@@ -388,27 +388,40 @@ class VLMGRPOTrainer(GRPOTrainer):
         Returns:
             The per-token log probabilities
         """
-        # Защитная проверка размерностей
+        # Корректировка image_grid_thw для соответствия формату pixel_values
         if pixel_values is not None and image_grid_thw is not None:
             pixel_batch_size = pixel_values.size(0)
             image_grid_batch_size = image_grid_thw.size(0)
             
-            if pixel_batch_size != image_grid_batch_size:
-                warnings.warn(
-                    f"Несоответствие размерностей: pixel_values.size(0)={pixel_batch_size}, "
-                    f"image_grid_thw.size(0)={image_grid_batch_size}. "
-                    f"Корректируем image_grid_thw для соответствия pixel_values."
-                )
-                
-                # Корректируем image_grid_thw для соответствия pixel_values
-                if image_grid_batch_size > pixel_batch_size:
-                    # Обрезаем до нужного размера
-                    image_grid_thw = image_grid_thw[:pixel_batch_size]
-                elif image_grid_batch_size < pixel_batch_size:
-                    # Дополняем повторением последнего элемента
-                    remaining = pixel_batch_size - image_grid_batch_size
-                    last_element = image_grid_thw[-1:].repeat(remaining, 1)
-                    image_grid_thw = torch.cat([image_grid_thw, last_element], dim=0)
+            if self.grad_verbose:
+                print(f"[DEBUG] pixel_values размер: {pixel_values.shape}")
+                print(f"[DEBUG] image_grid_thw исходный размер: {image_grid_thw.shape}")
+                print(f"[DEBUG] image_grid_thw содержимое: {image_grid_thw}")
+            
+            # Если pixel_values в формате [batch_size * num_patches, embedding_dim],
+            # а image_grid_thw в формате [batch_size, 3], нужно развернуть image_grid_thw
+            if pixel_batch_size > image_grid_batch_size:
+                # Вычисляем количество патчей на изображение
+                patches_per_image = pixel_batch_size // image_grid_batch_size
+                if pixel_batch_size % image_grid_batch_size == 0:
+                    # Разворачиваем image_grid_thw для каждого патча
+                    # Каждая строка image_grid_thw [t, h, w] должна повториться patches_per_image раз
+                    expanded_grid_thw = image_grid_thw.repeat_interleave(patches_per_image, dim=0)
+                    image_grid_thw = expanded_grid_thw
+                    
+                    if self.grad_verbose:
+                        print(f"[DEBUG] Развернули image_grid_thw: patches_per_image={patches_per_image}")
+                        print(f"[DEBUG] Новый размер image_grid_thw: {image_grid_thw.shape}")
+                else:
+                    warnings.warn(
+                        f"Неправильное соотношение размерностей: pixel_values.size(0)={pixel_batch_size} "
+                        f"не делится нацело на image_grid_thw.size(0)={image_grid_batch_size}"
+                    )
+            elif pixel_batch_size < image_grid_batch_size:
+                # Обрезаем image_grid_thw до размера pixel_values
+                image_grid_thw = image_grid_thw[:pixel_batch_size]
+                if self.grad_verbose:
+                    print(f"[DEBUG] Обрезали image_grid_thw до размера {pixel_batch_size}")
         
         # We add 1 to `logits_to_keep` because the last logits of the sequence is later excluded
         logits = model(input_ids=input_ids, attention_mask=attention_mask, pixel_values=pixel_values, 
