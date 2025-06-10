@@ -121,4 +121,4 @@ If you encounter any problems while using this library, please open an issue on 
 
 ## Training test
 
-![Training test](images/tensorboard_result.png)
+![Training test](images/tensorboard_240.png)
