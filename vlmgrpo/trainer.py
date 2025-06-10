@@ -113,7 +113,7 @@ class VLMGRPOTrainer(GRPOTrainer):
             callbacks = callbacks,
             peft_config = peft_config,
         )
-        self.num_iterations=1
+        self.num_iterations=1 # original mu parameter from deepseek paper. Controlling the number of iterations before updating the old policy 
         self.steps_per_generation = 4
         self.per_device_train_batch_size = 4
         self.gradient_accumulation_steps = 4
