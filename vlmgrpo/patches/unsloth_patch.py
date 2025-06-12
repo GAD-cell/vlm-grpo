@@ -5,14 +5,12 @@ import inspect
 import re
 from collections import OrderedDict
 from pyfiglet import Figlet
-f = Figlet(font='slant')
 
 def patch_requires_grad_post_hook():
     """
     Patches the requires_grad_post_hook function in unsloth-zoo.peft_utils
     """
     try:
-        print(f.renderText('VLM-GRPO - PATCHING UNSLOTH'))
         peft_utils = import_module('unsloth_zoo.peft_utils')
         
         original_function = peft_utils.requires_grad_for_gradient_checkpointing

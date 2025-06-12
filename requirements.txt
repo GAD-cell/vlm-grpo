@@ -1,3 +1,2 @@
 transformers==4.49.0
 unsloth==2025.4.1
-pyfiglet

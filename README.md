@@ -6,7 +6,7 @@ Vision Language Model training with GRPO and Unsloth
 
 This repository provides tools for training unsloth VLMS using GRPO. It includes:
 
-1. A custom trainer (`VLMGRPOTrainer`) that extends the TRL GRPO trainer to support vision inputs and unsloth
+1. A custom trainer (`VLMGRPOTrainer`) that extends the TRL GRPO trainer to support VLMs and unsloth
 2. Patches for the unsloth library to support VLMs GRPO training
 
 ## Installation
@@ -68,7 +68,7 @@ training_args = GRPOConfig(
 trainer = VLMGRPOTrainer(
     model=model,
     reward_funcs=reward_funcs,
-    args=training_args),
+    args=training_args,
     train_dataset=your_train_dataset,
     processing_class=tokenizer, # MUST put unsloth processor here !
     reward_processing_classes = tokenizer, #Here also
@@ -120,5 +120,6 @@ If you encounter any problems while using this library, please open an issue on 
 
 
 ## Training test
+One of my tensorboard logs from a training test with Qwen2.5 VL 7B 4bit
 
 ![Training test](images/tensorboard_240.png)
