@@ -99,9 +99,10 @@ class VLMGRPOTrainer(GRPOTrainer):
         callbacks = None,
         peft_config = None,
         grad_verbose = False,
-    ):
-        self.grad_verbose = grad_verbose
+        steps_per_generation = None
         
+    ):
+              
         super().__init__(
             model = model,
             reward_funcs = reward_funcs,
@@ -113,10 +114,15 @@ class VLMGRPOTrainer(GRPOTrainer):
             callbacks = callbacks,
             peft_config = peft_config,
         )
-        self.num_iterations=1 # original mu parameter from deepseek paper. Controlling the number of iterations before updating the old policy 
-        self.steps_per_generation = 4
-        self.per_device_train_batch_size = 4
-        self.gradient_accumulation_steps = 4
+        self.num_iterations=1 
+        self.per_device_train_batch_size = args.per_device_train_batch_size
+        self.gradient_accumulation_steps  = args.gradient_accumulation_steps
+        if steps_per_generation is None:
+          self.steps_per_generation = self.gradient_accumulation_steps
+        else : 
+          self.steps_per_generation = steps_per_generation
+        self.grad_verbose = grad_verbose
+
         self._step=0
         self.generation_config.bos_token_id = processing_class.bos_token_id
         self.generation_config.eos_token_id = processing_class.eos_token_id
