@@ -114,7 +114,7 @@ class VLMGRPOTrainer(GRPOTrainer):
             callbacks = callbacks,
             peft_config = peft_config,
         )
-        self.num_iterations=1 
+        self.num_iterations=args.num_iterations 
         self.per_device_train_batch_size = args.per_device_train_batch_size
         self.gradient_accumulation_steps  = args.gradient_accumulation_steps
         if steps_per_generation is None:
