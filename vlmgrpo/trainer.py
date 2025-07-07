@@ -79,6 +79,22 @@ def split_tensor_dict(
         for i in range(num_chunks)
     ]
 
+def nanstd(tensor: torch.Tensor) -> torch.Tensor:
+    """
+    Compute the standard deviation of a tensor, ignoring NaNs. This function only supports 1D tensors.
+
+    Args:
+        tensor (`torch.Tensor`):
+            Input tensor of shape `(N,)`.
+
+    Returns:
+        `torch.Tensor`:
+            Standard deviation of the tensor, ignoring NaNs.
+    """
+    variance = torch.nanmean((tensor - torch.nanmean(tensor, keepdim=True)) ** 2)  # Compute variance ignoring NaNs
+    count = torch.sum(~torch.isnan(tensor))  # Count of non-NaN values
+    variance *= count / (count - 1)  # Bessel's correction
+    return torch.sqrt(variance)
 
 class VLMGRPOTrainer(GRPOTrainer):
     """
@@ -323,7 +339,7 @@ class VLMGRPOTrainer(GRPOTrainer):
         for i, reward_func_name in enumerate(self.reward_func_names):
             mean_rewards = torch.nanmean(rewards_per_func[:, i]).item()
             self._metrics[mode][f"rewards/{reward_func_name}/mean"].append(mean_rewards)
-            std_rewards = super().nanstd(rewards_per_func[:, i]).item()
+            std_rewards = nanstd(rewards_per_func[:, i]).item()
             self._metrics[mode][f"rewards/{reward_func_name}/std"].append(std_rewards)
         self._metrics[mode]["reward"].append(mean_grouped_rewards.mean().item())
         self._metrics[mode]["reward_std"].append(std_grouped_rewards.mean().item())
