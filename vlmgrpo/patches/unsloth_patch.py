@@ -4,7 +4,6 @@ import torch
 import inspect
 import re
 from collections import OrderedDict
-from pyfiglet import Figlet
 
 def patch_requires_grad_post_hook():
     """
