@@ -80,6 +80,11 @@ trainer.train()
 ```
 
 See the `examples` directory for more detailed examples.
+
+## Notebooks
+
+[🔗 View the full notebook](https://colab.research.google.com/github/GAD-cell/VLM_GRPO/blob/main/examples/VLM_GRPO_basic_example.ipynb)
+
 ## Dataset
 
 The trainer is implemented for a specific input type : 
