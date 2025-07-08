@@ -8,8 +8,8 @@ torchaudio==2.6.0+cu124
 transformers==4.52.4
 
 
-unsloth
-unsloth_zoo
+unsloth==2025.6.12
+unsloth_zoo==2025.6.8
 
 
 bitsandbytes
