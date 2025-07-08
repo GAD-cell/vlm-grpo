@@ -17,7 +17,7 @@ accelerate
 xformers==0.0.29.post3
 triton
 cut_cross_entropy
-peft
+peft==0.15.2
 trl==0.18.2
 
 
@@ -26,3 +26,6 @@ protobuf
 datasets
 huggingface_hub
 hf_transfer
+safetensors
+regex
+tokenizers
