@@ -130,7 +130,7 @@ class VLMGRPOTrainer(GRPOTrainer):
             callbacks = callbacks,
             peft_config = peft_config,
         )
-        
+        self.gradgradient_accumulation_steps = args.gradient_accumulation_steps
         if steps_per_generation is None:
           self.steps_per_generation = self.gradient_accumulation_steps
         else : 
