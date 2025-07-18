@@ -12,6 +12,11 @@ This repository provides tools for training unsloth VLMS using GRPO. It includes
 ## Installation
 
 You can install the package and the requirements directly from the repository:
+with pip
+```bash
+!pip install git+https://github.com/GAD-cell/vlm-grpo.git@main
+```
+or manually
 
 ```bash
 pip install -e .
