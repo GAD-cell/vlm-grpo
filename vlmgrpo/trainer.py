@@ -133,10 +133,7 @@ class VLMGRPOTrainer(GRPOTrainer):
         self.num_iterations=args.num_iterations 
         self.per_device_train_batch_size = args.per_device_train_batch_size
         self.gradient_accumulation_steps  = args.gradient_accumulation_steps
-        if steps_per_generation is None:
-          self.steps_per_generation = self.gradient_accumulation_steps
-        else : 
-          self.steps_per_generation = steps_per_generation
+        self.steps_per_generation = args.steps_per_generation
         self.grad_verbose = grad_verbose
 
         self._step=0
