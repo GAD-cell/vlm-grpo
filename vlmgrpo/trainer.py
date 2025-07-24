@@ -29,7 +29,7 @@ from .patches import patch_requires_grad_post_hook
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from contextlib import nullcontext
 from transformers import GenerationConfig
-from types import  Optional
+
 import contextlib
 
 def compute_loss_context_manager(self):
@@ -38,7 +38,7 @@ def compute_loss_context_manager(self):
     """
     return self.autocast_smart_context_manager()
 
-def autocast_smart_context_manager(self, cache_enabled: Optional[bool] = True):
+def autocast_smart_context_manager(self, cache_enabled: bool = True):
     """
     A helper wrapper that creates an appropriate context manager for `autocast` while feeding it the desired
     arguments, depending on the situation.
