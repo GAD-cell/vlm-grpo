@@ -195,6 +195,7 @@ class VLMGRPOTrainer(GRPOTrainer):
         prompt_inputs = Trainer._prepare_inputs(self, prompt_inputs)
         prompt_ids, prompt_mask = prompt_inputs["input_ids"], prompt_inputs["attention_mask"]
         pixel_values, image_grid_thw = prompt_inputs["pixel_values"], prompt_inputs["image_grid_thw"]
+        pixel_values.requires_grad = True
         is_eos_prompt = prompt_ids == self.processing_class.eos_token_id
         
         if self.max_prompt_length is not None:
@@ -381,19 +382,6 @@ class VLMGRPOTrainer(GRPOTrainer):
                       image_grid_thw=image_grid_thw, logits_to_keep=logits_to_keep + 1).logits
         logits = logits[:, :-1, :]  # (B, L-1, V), exclude the last logit: it corresponds to the next token pred
 
-        logits_without_vision = model(
-            input_ids=input_ids, attention_mask=attention_mask,
-            logits_to_keep=logits_to_keep + 1
-        ).logits
-
-        logits_with_vision = model(
-            input_ids=input_ids, attention_mask=attention_mask,
-            pixel_values=pixel_values, image_grid_thw=image_grid_thw,
-            logits_to_keep=logits_to_keep + 1
-        ).logits
-
-        diff = (logits_with_vision - logits_without_vision).abs().mean()
-        print(f"[DEBUG] Diff between with/without vision: {diff.item()}")
         input_ids = input_ids[:, -logits_to_keep:]
         # For transformers<=4.48, logits_to_keep argument isn't supported, so here we drop logits ourselves.
         # See https://github.com/huggingface/trl/issues/2770
