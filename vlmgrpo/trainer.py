@@ -452,7 +452,10 @@ class VLMGRPOTrainer(GRPOTrainer):
         return loss
 
     def training_step(self, model, inputs, num_items_in_batch=None) -> torch.Tensor:
-        loss=super().training_step(model,inputs,num_items_in_batch)
+        # temporary patch for vision layer training
+        torch._functorch.config.donated_buffer = False 
+        accelerator = Trainer.accelerator
+        loss = accelerator.backward(loss,retain_graph = True) # dummy implementation , need to add scale_wrt_gas attr for deepspeed
 
         grad_params = [p for p in model.parameters() if p.grad is not None]
         
