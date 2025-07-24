@@ -30,6 +30,28 @@ from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from contextlib import nullcontext
 from transformers import GenerationConfig
 
+import contextlib
+
+def compute_loss_context_manager(self):
+    """
+    A helper wrapper to group together context managers.
+    """
+    return self.autocast_smart_context_manager()
+
+def autocast_smart_context_manager(self, cache_enabled: bool = True):
+    """
+    A helper wrapper that creates an appropriate context manager for `autocast` while feeding it the desired
+    arguments, depending on the situation.
+    """
+    if self.use_cpu_amp:
+        # TODO Matt: This syntax is deprecated and the preferred version is
+        #      torch.amp.autocast("cpu", cache_enabled=cache_enabled, dtype=self.amp_dtype)
+        #      but this is unavailable on Torch 2.1 or earlier. We can change this when we stop supporting 2.1.
+        ctx_manager = torch.cpu.amp.autocast(cache_enabled=cache_enabled, dtype=self.amp_dtype)
+    else:
+        ctx_manager = contextlib.nullcontext()
+
+    return ctx_manager
 
 def shuffle_tensor_dict(tensor_dict):
     """
@@ -195,6 +217,7 @@ class VLMGRPOTrainer(GRPOTrainer):
         prompt_inputs = Trainer._prepare_inputs(self, prompt_inputs)
         prompt_ids, prompt_mask = prompt_inputs["input_ids"], prompt_inputs["attention_mask"]
         pixel_values, image_grid_thw = prompt_inputs["pixel_values"], prompt_inputs["image_grid_thw"]
+        pixel_values.requires_grad = True #this should be hooked instead, it's temporary 
         is_eos_prompt = prompt_ids == self.processing_class.eos_token_id
         
         if self.max_prompt_length is not None:
@@ -451,10 +474,21 @@ class VLMGRPOTrainer(GRPOTrainer):
         return loss
 
     def training_step(self, model, inputs, num_items_in_batch=None) -> torch.Tensor:
-        loss=super().training_step(model,inputs,num_items_in_batch)
+        # temporary patch for vision layer training
+        model.train()
+        if hasattr(self.optimizer, "train") and callable(self.optimizer.train):
+            self.optimizer.train()
+
+        inputs = self._prepare_inputs(inputs)
+
+        with self.compute_loss_context_manager():
+            loss = self.compute_loss(model, inputs, num_items_in_batch=num_items_in_batch)
+
+        del inputs
+        torch._functorch.config.donated_buffer = False 
+        self.accelerator.backward(loss,retain_graph = True) # dummy implementation , need to add scale_wrt_gas attr for deepspeed
 
         grad_params = [p for p in model.parameters() if p.grad is not None]
-        
         
         total_norm = 0
         for p in grad_params:
