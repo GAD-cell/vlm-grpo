@@ -455,6 +455,7 @@ class VLMGRPOTrainer(GRPOTrainer):
 
         grad_params = [p for p in model.parameters() if p.grad is not None]
         
+        print(loss.grad_fn)
         
         total_norm = 0
         for p in grad_params:
