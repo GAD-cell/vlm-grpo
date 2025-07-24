@@ -29,7 +29,29 @@ from .patches import patch_requires_grad_post_hook
 from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from contextlib import nullcontext
 from transformers import GenerationConfig
+from types import  Optional
+import contextlib
 
+def compute_loss_context_manager(self):
+    """
+    A helper wrapper to group together context managers.
+    """
+    return self.autocast_smart_context_manager()
+
+def autocast_smart_context_manager(self, cache_enabled: Optional[bool] = True):
+    """
+    A helper wrapper that creates an appropriate context manager for `autocast` while feeding it the desired
+    arguments, depending on the situation.
+    """
+    if self.use_cpu_amp:
+        # TODO Matt: This syntax is deprecated and the preferred version is
+        #      torch.amp.autocast("cpu", cache_enabled=cache_enabled, dtype=self.amp_dtype)
+        #      but this is unavailable on Torch 2.1 or earlier. We can change this when we stop supporting 2.1.
+        ctx_manager = torch.cpu.amp.autocast(cache_enabled=cache_enabled, dtype=self.amp_dtype)
+    else:
+        ctx_manager = contextlib.nullcontext()
+
+    return ctx_manager
 
 def shuffle_tensor_dict(tensor_dict):
     """
@@ -453,6 +475,16 @@ class VLMGRPOTrainer(GRPOTrainer):
 
     def training_step(self, model, inputs, num_items_in_batch=None) -> torch.Tensor:
         # temporary patch for vision layer training
+        model.train()
+        if hasattr(self.optimizer, "train") and callable(self.optimizer.train):
+            self.optimizer.train()
+
+        inputs = self._prepare_inputs(inputs)
+
+        with self.compute_loss_context_manager():
+            loss = self.compute_loss(model, inputs, num_items_in_batch=num_items_in_batch)
+
+        del inputs
         torch._functorch.config.donated_buffer = False 
         accelerator = Trainer.accelerator
         loss = accelerator.backward(loss,retain_graph = True) # dummy implementation , need to add scale_wrt_gas attr for deepspeed
