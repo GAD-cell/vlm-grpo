@@ -486,8 +486,7 @@ class VLMGRPOTrainer(GRPOTrainer):
 
         del inputs
         torch._functorch.config.donated_buffer = False 
-        accelerator = Trainer.accelerator
-        loss = accelerator.backward(loss,retain_graph = True) # dummy implementation , need to add scale_wrt_gas attr for deepspeed
+        loss = self.accelerator.backward(loss,retain_graph = True) # dummy implementation , need to add scale_wrt_gas attr for deepspeed
 
         grad_params = [p for p in model.parameters() if p.grad is not None]
         
