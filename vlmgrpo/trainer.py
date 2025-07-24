@@ -487,7 +487,7 @@ class VLMGRPOTrainer(GRPOTrainer):
         del inputs
         torch._functorch.config.donated_buffer = False 
         self.accelerator.backward(loss,retain_graph = True) # dummy implementation , need to add scale_wrt_gas attr for deepspeed
-
+        
         grad_params = [p for p in model.parameters() if p.grad is not None]
         
         total_norm = 0
@@ -501,4 +501,4 @@ class VLMGRPOTrainer(GRPOTrainer):
             print(f"[DEBUG] Params with grad: {len(grad_params)} / {sum(1 for p in model.parameters())}")
             print(f"[DEBUG] Grad norm: {total_norm:.4f}")
         
-        return loss
+        return loss.detach()
