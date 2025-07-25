@@ -133,6 +133,18 @@ def requires_grad_for_gradient_checkpointing(model):
         pass
     pass
 
+    visual_module = None
+    for name, module in model.named_modules():
+        if "patch" in name.lower():
+            visual_module = module
+            print(f"Found visual module for pre-hook: {name}")
+            break
+
+    if visual_module is not None:
+        visual_module.register_forward_pre_hook(requires_grad_pre_hook)
+    else:
+        print("WARNING: No visual module found for registering requires_grad_pre_hook")
+
     if final_where is None:
         # Find all input embeddings and just set them all as a fallback!
         # Add other hooks first

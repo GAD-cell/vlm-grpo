@@ -217,7 +217,6 @@ class VLMGRPOTrainer(GRPOTrainer):
         prompt_inputs = Trainer._prepare_inputs(self, prompt_inputs)
         prompt_ids, prompt_mask = prompt_inputs["input_ids"], prompt_inputs["attention_mask"]
         pixel_values, image_grid_thw = prompt_inputs["pixel_values"], prompt_inputs["image_grid_thw"]
-        pixel_values.requires_grad = True #this should be hooked instead, it's temporary 
         is_eos_prompt = prompt_ids == self.processing_class.eos_token_id
         
         if self.max_prompt_length is not None:
@@ -474,19 +473,7 @@ class VLMGRPOTrainer(GRPOTrainer):
         return loss
 
     def training_step(self, model, inputs, num_items_in_batch=None) -> torch.Tensor:
-        # temporary patch for vision layer training
-        model.train()
-        if hasattr(self.optimizer, "train") and callable(self.optimizer.train):
-            self.optimizer.train()
-
-        inputs = self._prepare_inputs(inputs)
-
-        with self.compute_loss_context_manager():
-            loss = self.compute_loss(model, inputs, num_items_in_batch=num_items_in_batch)
-
-        del inputs
-        torch._functorch.config.donated_buffer = False 
-        self.accelerator.backward(loss,retain_graph = True) # dummy implementation , need to add scale_wrt_gas attr for deepspeed
+        loss = super().training_step(model, inputs, num_items_in_batch)
         
         grad_params = [p for p in model.parameters() if p.grad is not None]
         
