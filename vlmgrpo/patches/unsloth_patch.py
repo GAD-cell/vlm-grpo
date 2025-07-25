@@ -142,6 +142,8 @@ def requires_grad_for_gradient_checkpointing(model):
             module,
             "_forward_hooks",
         )
+        visual_module = eval("model.base_model.visual.patch_embed")
+        visual_module.register_forward_pre_hook(requires_grad_pre_hook)
         module.register_forward_hook(requires_grad_post_hook)
         return
     pass
