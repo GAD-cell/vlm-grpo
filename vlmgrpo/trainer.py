@@ -221,7 +221,7 @@ class VLMGRPOTrainer(GRPOTrainer):
         
         if self.max_prompt_length is not None:
           if prompt_ids.size(1)>self.max_prompt_length:
-              print("prompt length > max prompt length : truncating")
+              print("Warning: prompt_length > max_prompt_length. The prompt has been truncated, which may cause unintended behavior or a size mismatch error. Consider increasing max_prompt_length unless truncation is intentional.")
               prompt_ids = prompt_ids[:, -self.max_prompt_length:]
               prompt_mask = prompt_mask[:, -self.max_prompt_length:]
 
