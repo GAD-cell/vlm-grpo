@@ -216,7 +216,7 @@ class VLMGRPOTrainer(GRPOTrainer):
             images=image, text=prompts_text, return_tensors="pt", padding=True, add_special_tokens=False)
         prompt_inputs = Trainer._prepare_inputs(self, prompt_inputs)
         prompt_ids, prompt_mask = prompt_inputs["input_ids"], prompt_inputs["attention_mask"]
-        pixel_values, image_grid_thw = prompt_inputs["pixel_values"], prompt_inputs["image_grid_thw"]
+        pixel_values, image_grid_thw = prompt_inputs["pixel_values"], prompt_inputs.get("image_grid_thw",None) #image_grid_thw only for qwen models
         is_eos_prompt = prompt_ids == self.processing_class.eos_token_id
         
         if self.max_prompt_length is not None:
