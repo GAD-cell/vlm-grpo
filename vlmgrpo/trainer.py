@@ -192,7 +192,8 @@ class VLMGRPOTrainer(GRPOTrainer):
             if self._step % generate_every == 0 or self._buffered_inputs is None:
                 # self._buffered_inputs=None can occur when resuming from a checkpoint
                 generation_batch = self._generate_and_score_completions(generation_batch)
-                generation_batch["pixel_values"]=generation_batch["pixel_values"].view(generation_batch["prompt_ids"].size(0), -1, generation_batch["pixel_values"].size(1)) #redimensionner pixel_values pour split (batch_size * n_patches, dim embedding)->(batch_size,n_patches,dim embeddding)
+                if len(generation_batch["pixel_values"].shape) < 3:
+                    generation_batch["pixel_values"]=generation_batch["pixel_values"].view(generation_batch["prompt_ids"].size(0), -1, generation_batch["pixel_values"].size(1)) #redimensionner pixel_values pour split (batch_size * n_patches, dim embedding)->(batch_size,n_patches,dim embeddding)  
                 generation_batch = shuffle_tensor_dict(generation_batch)
                 self._buffered_inputs = split_tensor_dict(generation_batch, self.steps_per_generation)
             inputs = self._buffered_inputs[self._step % self.steps_per_generation]
