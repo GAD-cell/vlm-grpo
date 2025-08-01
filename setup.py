@@ -9,7 +9,7 @@ setup(
         "torch==2.6.0+cu124",
         "torchvision==0.21.0+cu124",
         "torchaudio==2.6.0+cu124",
-        "transformers==4.52.4",
+        "transformers==4.54.1",
         "unsloth==2025.7.11",
         "unsloth_zoo==2025.7.11",
         "bitsandbytes",

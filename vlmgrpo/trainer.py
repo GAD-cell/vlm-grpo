@@ -192,7 +192,8 @@ class VLMGRPOTrainer(GRPOTrainer):
             if self._step % generate_every == 0 or self._buffered_inputs is None:
                 # self._buffered_inputs=None can occur when resuming from a checkpoint
                 generation_batch = self._generate_and_score_completions(generation_batch)
-                generation_batch["pixel_values"]=generation_batch["pixel_values"].view(generation_batch["prompt_ids"].size(0), -1, generation_batch["pixel_values"].size(1)) #redimensionner pixel_values pour split (batch_size * n_patches, dim embedding)->(batch_size,n_patches,dim embeddding)
+                if len(generation_batch["pixel_values"].shape) < 3:
+                    generation_batch["pixel_values"]=generation_batch["pixel_values"].view(generation_batch["prompt_ids"].size(0), -1, generation_batch["pixel_values"].size(1)) #redimensionner pixel_values pour split (batch_size * n_patches, dim embedding)->(batch_size,n_patches,dim embeddding)  
                 generation_batch = shuffle_tensor_dict(generation_batch)
                 self._buffered_inputs = split_tensor_dict(generation_batch, self.steps_per_generation)
             inputs = self._buffered_inputs[self._step % self.steps_per_generation]
@@ -216,7 +217,7 @@ class VLMGRPOTrainer(GRPOTrainer):
             images=image, text=prompts_text, return_tensors="pt", padding=True, add_special_tokens=False)
         prompt_inputs = Trainer._prepare_inputs(self, prompt_inputs)
         prompt_ids, prompt_mask = prompt_inputs["input_ids"], prompt_inputs["attention_mask"]
-        pixel_values, image_grid_thw = prompt_inputs["pixel_values"], prompt_inputs["image_grid_thw"]
+        pixel_values, image_grid_thw = prompt_inputs["pixel_values"], prompt_inputs.get("image_grid_thw",None) #image_grid_thw only for qwen models
         is_eos_prompt = prompt_ids == self.processing_class.eos_token_id
         
         if self.max_prompt_length is not None:
