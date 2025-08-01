@@ -140,10 +140,10 @@ def requires_grad_for_gradient_checkpointing(model):
             print(f"Found visual module for pre-hook: {name}")
             break
 
-        # elif "conv_stem" in name.lower(): # for gemma3n
-        #     visual_module = module
-        #     print(f"Found visual module for pre-hook: {name}")
-        #     break
+        elif "vision_tower" in name.lower(): # for gemma3n
+            visual_module = module
+            print(f"Found visual module for pre-hook: {name}")
+            break
 
     if visual_module is not None:
         visual_module.register_forward_pre_hook(requires_grad_pre_hook)
