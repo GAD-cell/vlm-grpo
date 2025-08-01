@@ -234,6 +234,9 @@ class VLMGRPOTrainer(GRPOTrainer):
                 if self.is_fsdp_enabled
                 else nullcontext()
             ):
+                print(prompt_inputs.keys())
+                print(prompt_inputs["input_ids"].size())
+                print(prompt_inputs["pixel_values"].size())
                 prompt_completion_ids = unwrapped_model.generate(**prompt_inputs, generation_config=self.generation_config)
 
         # Compute prompt length and extract completion ids
