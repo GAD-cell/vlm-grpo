@@ -121,7 +121,7 @@ The trainer is implemented for a specific input type :
 ## Limitations
 - **Videos input**: Doesn't support for now video input, only images or image sequence
 - **VLLm** : Still need to add vllm support to the code, will release it soon
-- **Tested** : For now i've tested my implementation only with Qwen2 VL and Qwen2.5 VL
+- **Tested** : Tested on Qwen VL models, Llama vision and Gemma3 models
 
 
 ## Issues
