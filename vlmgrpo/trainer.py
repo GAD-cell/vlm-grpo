@@ -400,9 +400,6 @@ class VLMGRPOTrainer(GRPOTrainer):
             The per-token log probabilities
         """
         # We add 1 to `logits_to_keep` because the last logits of the sequence is later excluded
-        print(input_ids.shape)
-        print(attention_mask.shape)
-        print(pixel_values.shape)
         logits = model(input_ids=input_ids, attention_mask=attention_mask, pixel_values=pixel_values, 
                       image_grid_thw=image_grid_thw, logits_to_keep=logits_to_keep + 1).logits
         logits = logits[:, :-1, :]  # (B, L-1, V), exclude the last logit: it corresponds to the next token pred
