@@ -1,8 +1,7 @@
 
-torch==2.6.0+cu124
-torchvision==0.21.0+cu124
-torchaudio==2.6.0+cu124
---index-url https://download.pytorch.org/whl/cu124
+torch==2.8.0+cu126
+torchvision
+--index-url https://download.pytorch.org/whl/cu126
 
 
 transformers==4.54.1
